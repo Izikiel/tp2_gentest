@@ -258,63 +258,9 @@ testclasses = [
     "math.genetics.ElitisticListPopulation",
 ]
 
-
-# def run(tool, times):
-#     commands = {
-#         "randoop": {
-#             "generate": randoopGenTestsCommands,
-#             "compile": compileCommandsRandoop,
-#             "run": runTestsCommandRandoop,
-#         }
-#     }
-
-# def runRandoop(times):
-#     # falta mutaciones
-#     results = {
-#     }
-#     for _ in range(times):
-#         runCommands(randoopGenTestsCommands())
-#         runCommands(compileCommandsRandoop())
-#         runCommands(runTestsCommandRandoop())
-#         runCommands(genReportCommand("randoop"))
-
-#         for t in self.testclasses:
-#             csv_filename = os.path.join("reports", t, "randoop", t) + ".csv"
-#             updateResultsCsv(csv_filename, results)
-
-#     for t in self.testclasses:
-#         for h in HEADERS_JACOCO_COVERAGE:
-#             results[t][h] /= float(times)
-
-#     return results
-
-# def runEvo(times):
-#     results = {
-#     }
-#     for _ in range(times):
-#         runCommands(evoGenTestsCommands())
-#         runCommands(compileCommandsEvo())
-#         runCommands(runTestsCommandEvo())
-#         runCommands(genReportCommand("evo"))
-
-#         for t in self.testclasses:
-#             csv_filename = os.path.join("reports", t, "evo", t) + ".csv"
-#             updateResultsCsv(csv_filename, results)
-
-#     for t in self.testclasses:
-#         for h in HEADERS_JACOCO_COVERAGE:
-#             results[t][h] /= float(times)
-
-#     return results
-
 if __name__ == '__main__':
     # r = RandoopTestGenerator(testclasses)
     # pprint(r.run(1))
 
     evo = EvoTestGenerator(testclasses)
     pprint(evo.run(1))
-    # r = runRandoop(1)
-    # pprint(r)
-
-    # r = runEvo(1)
-    # pprint(r)
