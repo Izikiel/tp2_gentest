@@ -207,7 +207,8 @@ class EvoTestGenerator(TestGenerator):
         options = " ".join([
             "-generateSuite",
             "-Dsearch_budget=60",
-            "-Dstopping_condition=MaxTime"
+            "-Dstopping_condition=MaxTime",
+            "-Duse_separate_classloader=false"
         ])
         command = "java -ea -jar {jars} -projectCP {classpath} {options} -class {testclass} -base_dir {output_dir}".format(
             **{
