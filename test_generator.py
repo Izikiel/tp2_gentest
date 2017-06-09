@@ -21,7 +21,6 @@ def genTestsRandoopCommand(testclass, output_dir):
     options = " ".join([
         "--no-error-revealing-tests=true",
         "--timelimit=60",
-        "--outputlimit=30"
     ])
     command = "java -ea -classpath {classpath} {randoop} --testclass={testclass} {options} --junit-output-dir={output_dir}".format(
         **{
@@ -38,21 +37,18 @@ def genTestsRandoopCommand(testclass, output_dir):
 
 def genTestsEvoCommand(testclass, output_dir):
     jars = os.path.join("jars", "evosuite-master-1.0.5.jar")
-    classpath = os.pathsep.join(
-        ["bin"]
-    )
-    classfiles = os.path.join(
-        "bin", testclass.replace(".", os.path.sep)) + ".class"
+    classpath = os.path.abspath("bin")
+    target = os.path.abspath("bin")
     options = " ".join([
         "-generateSuite",
         "-Dsearch_budget=60",
         "-Dstopping_condition=MaxTime"
     ])
-    command = "java -ea -jar {jars} -projectCP {classpath} -target {classfiles} {options} -class {testclass} -base_dir {output_dir}".format(
+    command = "java -ea -jar {jars} -projectCP {classpath} -target {target} {options} -class {testclass} -base_dir {output_dir}".format(
         **{
             "jars": jars,
             "classpath": classpath,
-            "classfiles": classfiles,
+            "target": target,
             "options": options,
             "testclass": testclass,
             "output_dir": output_dir,
