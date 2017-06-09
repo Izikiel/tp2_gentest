@@ -2,6 +2,8 @@ import sys
 import os
 import subprocess
 from multiprocessing import Process
+import csv
+from pprint import pprint
 
 
 def genFolders(path):
@@ -38,17 +40,15 @@ def genTestsRandoopCommand(testclass, output_dir):
 def genTestsEvoCommand(testclass, output_dir):
     jars = os.path.join("jars", "evosuite-master-1.0.5.jar")
     classpath = os.path.abspath("bin")
-    target = os.path.abspath("bin")
     options = " ".join([
         "-generateSuite",
         "-Dsearch_budget=60",
         "-Dstopping_condition=MaxTime"
     ])
-    command = "java -ea -jar {jars} -projectCP {classpath} -target {target} {options} -class {testclass} -base_dir {output_dir}".format(
+    command = "java -ea -jar {jars} -projectCP {classpath} {options} -class {testclass} -base_dir {output_dir}".format(
         **{
             "jars": jars,
             "classpath": classpath,
-            "target": target,
             "options": options,
             "testclass": testclass,
             "output_dir": output_dir,
@@ -61,31 +61,35 @@ def genTestsEvoCommand(testclass, output_dir):
 # lo deberia levantar de un txt?
 testclasses = [
     "collections.comparators.FixedOrderComparator",
-    # "collections.iterators.FilterIterator",
-    # "collections.map.PredicatedMap",
-    # "math.genetics.ElitisticListPopulation",
+    "collections.iterators.FilterIterator",
+    "collections.map.PredicatedMap",
+    "math.genetics.ElitisticListPopulation",
 ]
 
 
-def compileCommands(tool):
+def compileCommands(src, bin_, tool, testclass):
+    classpath = os.pathsep.join(
+        [".", os.path.join("jars", "*"), bin_, "bin"]
+    )
+    to_compile = os.path.join(src, "*.java")
+    command = "javac -cp {classpath} {to_compile} -d {bin}".format(
+        **{
+            "classpath": classpath,
+            "to_compile": to_compile,
+            "bin": bin_
+        }
+    )
+    return command
+
+def compileCommandsRandoop():
     commands = []
+    tool = "randoop"
     for t in testclasses:
         src = os.path.join("tests", t, tool, "src")
-        bin = os.path.join("tests", t, tool, "bin")
+        bin_ = os.path.join("tests", t, tool, "bin")
         genFolders(src)
-        genFolders(bin)
-        classpath = os.pathsep.join(
-            [".", os.path.join("jars", "*"), bin, "bin"]
-        )
-        to_compile = os.path.join(src, "*.java")
-        command = "javac -cp {classpath} {to_compile} -d {bin}".format(
-            **{
-                "classpath": classpath,
-                "to_compile": to_compile,
-                "bin": bin
-            }
-        )
-        commands.append(command)
+        genFolders(bin_)
+        commands.append(compileCommands(src, bin_, tool, t))
     return commands
 
 
@@ -98,27 +102,35 @@ def genCommands(genCommand, tool):
     return commands
 
 
-def runTestsCommand(tool):
+def runTestsCommand(bin_, report, testclass, classname):
+    jars = os.path.join("jars", "*")
+    classpath = os.pathsep.join([".", "bin", bin_, jars])
+    jacoco = "{jar}=destfile={report_out}.exec".format(
+        **{
+            "jar": os.path.join("jars", "jacocoagent.jar"),
+            "report_out": os.path.join(report, testclass),
+        }
+    )
+    command = "java -cp {classpath} -javaagent:{jacoco} org.junit.runner.JUnitCore {classname}".format(
+        **{
+            "classpath": classpath,
+            "jacoco": jacoco,
+            "classname": classname
+        }
+    )
+    return command
+
+
+def runTestsCommandRandoop():
     commands = []
+    tool = "randoop"
     for t in testclasses:
-        src = os.path.join("tests", t, tool, "src")
-        bin = os.path.join("tests", t, tool, "bin")
         report = os.path.join("reports", t, tool)
-        genFolders(src)
-        genFolders(bin)
+        bin_ = os.path.join("tests", t, tool, "bin")
         genFolders(report)
-        jars = os.path.join("jars", "*")
-        classpath = os.pathsep.join([".", "bin", bin, jars])
-        jacoco = "jars\jacocoagent.jar=destfile={0}.exec".format(
-            os.path.join(report, t)
+        commands.append(
+            runTestsCommand(bin_, report, t, "RegressionTest")
         )
-        command = "java -cp {classpath} -javaagent:{jacoco} org.junit.runner.JUnitCore RegressionTest".format(
-            **{
-                "classpath": classpath,
-                "jacoco": jacoco
-            }
-        )
-        commands.append(command)
     return commands
 
 
@@ -160,9 +172,52 @@ def runCommands(commands):
     for p in processes:
         p.join()
 
+
+HEADERS_JACOCO_COVERAGE = [
+    "INSTRUCTION_MISSED",
+    "INSTRUCTION_COVERED",
+    "BRANCH_MISSED",
+    "BRANCH_COVERED",
+    "LINE_MISSED",
+    "LINE_COVERED",
+    "COMPLEXITY_MISSED",
+    "COMPLEXITY_COVERED",
+    "METHOD_MISSED",
+    "METHOD_COVERED",
+]
+
+
+def runRandoop(times):
+    # falta mutaciones
+    results = {
+    }
+    for _ in range(times):
+        runCommands(randoopGenCommands())
+        runCommands(compileCommandsRandoop())
+        runCommands(runTestsCommandRandoop())
+        runCommands(genReportCommand("randoop"))
+
+        for t in testclasses:
+            reports_csv = os.path.join("reports", t, "randoop", t) + ".csv"
+
+            with open(reports_csv, "r") as coverage_results:
+                for row in csv.DictReader(coverage_results):
+                    class_name = row["PACKAGE"] + "." + row["CLASS"]
+                    assert class_name == t
+                    results.setdefault(class_name, {})
+
+                    for h in HEADERS_JACOCO_COVERAGE:
+                        results[class_name].setdefault(h, 0)
+                        results[class_name][h] += int(row[h])
+
+    for t in testclasses:
+        for h in HEADERS_JACOCO_COVERAGE:
+            results[t][h] /= float(times)
+
+    return results
+
 if __name__ == '__main__':
-    # runCommands(randoopGenCommands())
-    # runCommands(compileCommands("randoop"))
-    # runCommands(runTestsCommand("randoop"))
-    # runCommands(genReportCommand("randoop"))
-    runCommands(evoCommands())
+    r = runRandoop(1)
+    pprint(r)
+
+    # runCommands(evoCommands())
