@@ -11,6 +11,7 @@ class TestGenerator(object):
     def __init__(self, testclasses):
         self.tool = ""
         self.testclasses = testclasses
+        self.suffix = ""
 
     HEADERS_JACOCO_COVERAGE = [
         "INSTRUCTION_MISSED",
@@ -48,35 +49,15 @@ class TestGenerator(object):
         print(command)
         return command
 
-    def genCommand(self, t, path):
+    def genCommand(self, t):
         raise NotImplementedError
 
     def genTestsCommands(self):
         commands = []
         for t in self.testclasses:
-            path = self.getSrcPath(t)
-            self.genFolders(path)
-            commands.append(self.genCommand(t, path))
+            self.genFolders(self.getSrcPath(t))
+            commands.append(self.genCommand(t))
         return commands
-
-    def runTestCommandGenerator(self, bin_, report, testclass, classname):
-        jars = os.path.join("jars", "*")
-        classpath = os.pathsep.join([".", "bin", bin_, jars])
-        jacoco = "{jar}=destfile={report_out}.exec".format(
-            **{
-                "jar": os.path.join("jars", "jacocoagent.jar"),
-                "report_out": os.path.join(report, testclass),
-            }
-        )
-        command = "java -cp {classpath} -javaagent:{jacoco} org.junit.runner.JUnitCore {classname}".format(
-            **{
-                "classpath": classpath,
-                "jacoco": jacoco,
-                "classname": classname
-            }
-        )
-        print(command)
-        return command
 
     def runMutationTestCommandGenerator(self, src, bin_, report, testclass):
         jars = os.path.join("jars", "*")
@@ -86,7 +67,7 @@ class TestGenerator(object):
     def genReportCommand(self):
         commands = []
         for t in self.testclasses:
-            report_file_name = os.path.join("reports", t, self.tool, t)
+            report_file_name = os.path.join(self.getReportPath(), t)
             exec_file = report_file_name + ".exec"
             csv_file = report_file_name + ".csv"
 
@@ -124,12 +105,6 @@ class TestGenerator(object):
                     results[class_name][h] += int(row[h])
         return results
 
-    def compileTestsCommands(self):
-        raise NotImplementedError
-
-    def runTestsCommands(self):
-        raise NotImplementedError
-
     def run(self, times):
         # falta mutaciones
         results = {
@@ -141,8 +116,7 @@ class TestGenerator(object):
             self.runCommands(self.genReportCommand())
 
             for t in self.testclasses:
-                csv_filename = os.path.join(
-                    "reports", t, self.tool, t) + ".csv"
+                csv_filename = os.path.join(self.getReportPath(), t) + ".csv"
                 self.updateResultsCsv(csv_filename, results)
 
         for t in self.testclasses:
@@ -151,24 +125,76 @@ class TestGenerator(object):
 
         return results
 
+    def runTestsCommands(self):
+        commands = []
+        for t in self.testclasses:
+            bin_ = self.getBinPath()
+            self.genFolders(self.getReportPath())
+            jars = os.path.join("jars", "*")
+            classpath = os.pathsep.join([".", "bin", bin_, jars])
+            jacoco = "{jar}=destfile={report_out}.exec".format(
+                **{
+                    "jar": os.path.join("jars", "jacocoagent.jar"),
+                    "report_out": os.path.join(self.getReportPath(), t),
+                }
+            )
+            command = "java -cp {classpath} -javaagent:{jacoco} org.junit.runner.JUnitCore {classname}".format(
+                **{
+                    "classpath": classpath,
+                    "jacoco": jacoco,
+                    "classname": t + self.suffix
+                }
+            )
+            print(command)
+            commands.append(command)
+        return commands
+
+    def compileTestsCommands(self):
+        commands = []
+        for t in self.testclasses:
+            src = self.getSrcPath(t)
+            bin_ = self.getBinPath()
+            self.genFolders(bin_)
+            classpath = os.pathsep.join(
+                [".", os.path.join("jars", "*"), bin_, "bin"]
+            )
+            to_compile = os.path.join(src, "*.java")
+            command = "javac -cp {classpath} {to_compile} -d {bin}".format(
+                **{
+                    "classpath": classpath,
+                    "to_compile": to_compile,
+                    "bin": bin_
+                }
+            )
+            print(command)
+            commands.append(command)
+        return commands
+
     def getSrcPath(self, testclass):
         package = self.getPackage(testclass)
         return os.path.join("tests", self.tool, "src", *package)
 
-    def getBinPath(self, testclass):
-        package = self.getPackage(testclass)
-        return os.path.join("tests", self.tool, "bin", *package)
+    def getBinPath(self):
+        return os.path.join("tests", self.tool, "bin")
 
     def getPackage(self, testclass):
         return filter(lambda s: s[0] >= 'a', testclass.split("."))
+
+    def getClassName(self, testclass):
+        return testclass.split(".")[-1]
+
+    def getReportPath(self):
+        return os.path.join("reports", self.tool)
+
 
 class RandoopTestGenerator(TestGenerator):
 
     def __init__(self, testclasses):
         super(RandoopTestGenerator, self).__init__(testclasses)
         self.tool = "randoop"
+        self.suffix = "_Test"
 
-    def genCommand(self, testclass, output_dir):
+    def genCommand(self, testclass):
         classpath = os.pathsep.join(
             [os.path.join("jars", "*"), "bin"]
         )
@@ -176,6 +202,16 @@ class RandoopTestGenerator(TestGenerator):
         options = " ".join([
             "--no-error-revealing-tests=true",
             "--timelimit=60",
+            "--regression-test-basename={testclass}".format(
+                **{
+                    "testclass": self.getClassName(testclass) + self.suffix
+                }
+            ),
+            "--junit-package-name={package}".format(
+                **{
+                    "package": ".".join(self.getPackage(testclass))
+                }
+            )
         ])
         command = "java -ea -classpath {classpath} {randoop} --testclass={testclass} {options} --junit-output-dir={output_dir}".format(
             **{
@@ -183,31 +219,11 @@ class RandoopTestGenerator(TestGenerator):
                 "randoop": randoop,
                 "testclass": testclass,
                 "options": options,
-                "output_dir": output_dir
+                "output_dir": os.path.join("tests", self.tool, "src")
             }
         )
         print(command)
         return command
-
-    def compileTestsCommands(self):
-        commands = []
-        for t in self.testclasses:
-            src = self.getSrcPath(t)
-            bin_ = self.getBinPath(t)
-            self.genFolders(bin_)
-            commands.append(self.compileCommands(src, bin_))
-        return commands
-
-    def runTestsCommands(self):
-        commands = []
-        for t in self.testclasses:
-            report = os.path.join("reports", t, self.tool)
-            bin_ = self.getBinPath(t)
-            self.genFolders(report)
-            commands.append(
-                self.runTestCommandGenerator(bin_, report, t, "RegressionTest")
-            )
-        return commands
 
 
 class EvoTestGenerator(TestGenerator):
@@ -215,8 +231,9 @@ class EvoTestGenerator(TestGenerator):
     def __init__(self, testclasses):
         super(EvoTestGenerator, self).__init__(testclasses)
         self.tool = "evo"
+        self.suffix = "_ESTest"
 
-    def genCommand(self, testclass, output_dir):
+    def genCommand(self, testclass):
         jars = os.path.join("jars", "evosuite-master-1.0.5.jar")
         classpath = os.path.abspath("bin")
         options = " ".join([
@@ -232,7 +249,7 @@ class EvoTestGenerator(TestGenerator):
                 "options": options,
                 "testclass": testclass,
                 "output_dir": os.path.join("tests", self.tool, "src")
-                             # solo para este caso dejar asi!
+                # solo para este caso dejar asi!
             }
         )
         print(command)
@@ -242,31 +259,6 @@ class EvoTestGenerator(TestGenerator):
         suffix = "evosuite-tests"
         package = self.getPackage(testclass)
         return os.path.join("tests", self.tool, "src", suffix, *package)
-
-    def compileTestsCommands(self):
-        commands = []
-        for t in self.testclasses:
-            src = self.getSrcPath(t)
-            bin_ = self.getBinPath(t)
-            self.genFolders(bin_)
-            commands.append(self.compileCommands(src, bin_))
-        return commands
-
-    def runTestsCommands(self):
-        commands = []
-        tool = "evo"
-        EVO_SUFFIX = "_ESTest"
-        for t in self.testclasses:
-            report = os.path.join("reports", t, tool)
-            package = filter(lambda s: s[0] >= 'a', t.split("."))
-            classname = t.split(".")[-1]
-            bin_ = self.getBinPath(t)
-            self.genFolders(report)
-            testclass_evo = ".".join([*package, classname + EVO_SUFFIX])
-            commands.append(
-                self.runTestCommandGenerator(bin_, report, t, testclass_evo)
-            )
-        return commands
 
 
 # lo deberia levantar de un txt?
@@ -278,8 +270,8 @@ testclasses = [
 ]
 
 if __name__ == '__main__':
-    # r = RandoopTestGenerator(testclasses)
-    # pprint(r.run(1))
+    r = RandoopTestGenerator(testclasses)
+    pprint(r.run(1))
 
     evo = EvoTestGenerator(testclasses)
     pprint(evo.run(1))
