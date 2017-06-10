@@ -54,7 +54,7 @@ class TestGenerator(object):
     def genTestsCommands(self):
         commands = []
         for t in self.testclasses:
-            path = os.path.join("tests", t, self.tool, "src")
+            path = self.getSrcPath(t)
             self.genFolders(path)
             commands.append(self.genCommand(t, path))
         return commands
@@ -77,6 +77,11 @@ class TestGenerator(object):
         )
         print(command)
         return command
+
+    def runMutationTestCommandGenerator(self, src, bin_, report, testclass):
+        jars = os.path.join("jars", "*")
+        classpath = os.pathsep.join([".", "bin", bin_, jars])
+        pitest = ""
 
     def genReportCommand(self):
         commands = []
@@ -146,6 +151,16 @@ class TestGenerator(object):
 
         return results
 
+    def getSrcPath(self, testclass):
+        package = self.getPackage(testclass)
+        return os.path.join("tests", self.tool, "src", *package)
+
+    def getBinPath(self, testclass):
+        package = self.getPackage(testclass)
+        return os.path.join("tests", self.tool, "bin", *package)
+
+    def getPackage(self, testclass):
+        return filter(lambda s: s[0] >= 'a', testclass.split("."))
 
 class RandoopTestGenerator(TestGenerator):
 
@@ -177,8 +192,8 @@ class RandoopTestGenerator(TestGenerator):
     def compileTestsCommands(self):
         commands = []
         for t in self.testclasses:
-            src = os.path.join("tests", t, self.tool, "src")
-            bin_ = os.path.join("tests", t, self.tool, "bin")
+            src = self.getSrcPath(t)
+            bin_ = self.getBinPath(t)
             self.genFolders(bin_)
             commands.append(self.compileCommands(src, bin_))
         return commands
@@ -187,7 +202,7 @@ class RandoopTestGenerator(TestGenerator):
         commands = []
         for t in self.testclasses:
             report = os.path.join("reports", t, self.tool)
-            bin_ = os.path.join("tests", t, self.tool, "bin")
+            bin_ = self.getBinPath(t)
             self.genFolders(report)
             commands.append(
                 self.runTestCommandGenerator(bin_, report, t, "RegressionTest")
@@ -216,20 +231,23 @@ class EvoTestGenerator(TestGenerator):
                 "classpath": classpath,
                 "options": options,
                 "testclass": testclass,
-                "output_dir": output_dir,
+                "output_dir": os.path.join("tests", self.tool, "src")
+                             # solo para este caso dejar asi!
             }
         )
         print(command)
         return command
 
+    def getSrcPath(self, testclass):
+        suffix = "evosuite-tests"
+        package = self.getPackage(testclass)
+        return os.path.join("tests", self.tool, "src", suffix, *package)
+
     def compileTestsCommands(self):
         commands = []
-        tool = "evo"
-        suffix = "evosuite-tests"
         for t in self.testclasses:
-            package = filter(lambda s: s[0] >= 'a', t.split("."))
-            src = os.path.join("tests", t, tool, "src", suffix, *package)
-            bin_ = os.path.join("tests", t, tool, "bin")
+            src = self.getSrcPath(t)
+            bin_ = self.getBinPath(t)
             self.genFolders(bin_)
             commands.append(self.compileCommands(src, bin_))
         return commands
@@ -242,7 +260,7 @@ class EvoTestGenerator(TestGenerator):
             report = os.path.join("reports", t, tool)
             package = filter(lambda s: s[0] >= 'a', t.split("."))
             classname = t.split(".")[-1]
-            bin_ = os.path.join("tests", t, tool, "bin")
+            bin_ = self.getBinPath(t)
             self.genFolders(report)
             testclass_evo = ".".join([*package, classname + EVO_SUFFIX])
             commands.append(
@@ -254,9 +272,9 @@ class EvoTestGenerator(TestGenerator):
 # lo deberia levantar de un txt?
 testclasses = [
     "collections.comparators.FixedOrderComparator",
-    "collections.iterators.FilterIterator",
-    "collections.map.PredicatedMap",
-    "math.genetics.ElitisticListPopulation",
+    # "collections.iterators.FilterIterator",
+    # "collections.map.PredicatedMap",
+    # "math.genetics.ElitisticListPopulation",
 ]
 
 if __name__ == '__main__':
