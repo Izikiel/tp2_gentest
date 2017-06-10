@@ -12,6 +12,7 @@ class TestGenerator(object):
         self.tool = ""
         self.testclasses = testclasses
         self.suffix = ""
+        self.folder_suffix = ""
 
     HEADERS_JACOCO_COVERAGE = [
         "INSTRUCTION_MISSED",
@@ -52,47 +53,10 @@ class TestGenerator(object):
     def genCommand(self, t):
         raise NotImplementedError
 
-    def genTestsCommands(self):
-        commands = []
-        for t in self.testclasses:
-            self.genFolders(self.getSrcPath(t))
-            commands.append(self.genCommand(t))
-        return commands
-
     def runMutationTestCommandGenerator(self, src, bin_, report, testclass):
         jars = os.path.join("jars", "*")
         classpath = os.pathsep.join([".", "bin", bin_, jars])
         pitest = ""
-
-    def genReportCommand(self):
-        commands = []
-        for t in self.testclasses:
-            report_file_name = os.path.join(self.getReportPath(), t)
-            exec_file = report_file_name + ".exec"
-            csv_file = report_file_name + ".csv"
-
-            jacococli = os.path.join("jars", "jacococli.jar")
-            classfiles = os.path.join(
-                "bin", t.replace(".", os.path.sep)) + ".class"
-            command = "java -jar {jacococli} report {exec_file} --classfiles {classfiles} --csv {csv_file} --name {tool}".format(
-                **{
-                    "jacococli": jacococli,
-                    "exec_file": exec_file,
-                    "classfiles": classfiles,
-                    "csv_file": csv_file,
-                    "tool": self.tool
-                }
-            )
-            commands.append(command)
-        return commands
-
-    def runCommands(self, commands):
-        processes = [Process(target=subprocess.run, args=(c,))
-                     for c in commands]
-        for p in processes:
-            p.start()
-        for p in processes:
-            p.join()
 
     def updateResultsCsv(self, csv_filename, results):
         with open(csv_filename, "r") as coverage_results:
@@ -105,15 +69,89 @@ class TestGenerator(object):
                     results[class_name][h] += int(row[h])
         return results
 
+    def compileTestCommand(self, testclass):
+        src = os.path.join(self.getSrcPath(), *self.getPackage(testclass))
+        bin_ = self.getBinPath()
+        classpath = os.pathsep.join(
+            [".", os.path.join("jars", "*"), bin_, "bin"]
+        )
+        to_compile = os.path.join(src, "*.java")
+        command = "javac -cp {classpath} {to_compile} -d {bin}".format(
+            **{
+                "classpath": classpath,
+                "to_compile": to_compile,
+                "bin": bin_
+            }
+        )
+        print(command)
+        return command
+
+    def runTestCommands(self, testclass):
+        jars = os.path.join("jars", "*")
+        classpath = os.pathsep.join([".", "bin", self.getBinPath(), jars])
+        jacoco = "{jar}=destfile={report_out}.exec".format(
+            **{
+                "jar": os.path.join("jars", "jacocoagent.jar"),
+                "report_out": os.path.join(self.getReportPath(), testclass),
+            }
+        )
+        command = "java -cp {classpath} -javaagent:{jacoco} org.junit.runner.JUnitCore {classname}".format(
+            **{
+                "classpath": classpath,
+                "jacoco": jacoco,
+                "classname": testclass + self.suffix
+            }
+        )
+        print(command)
+        return command
+
+    def genReportCommand(self, testclass):
+        report_file_name = os.path.join(self.getReportPath(), testclass)
+        exec_file = report_file_name + ".exec"
+        csv_file = report_file_name + ".csv"
+
+        jacococli = os.path.join("jars", "jacococli.jar")
+        classfiles = os.path.join(
+            "bin", testclass.replace(".", os.path.sep)) + ".class"
+        command = "java -jar {jacococli} report {exec_file} --classfiles {classfiles} --csv {csv_file} --name {tool}".format(
+            **{
+                "jacococli": jacococli,
+                "exec_file": exec_file,
+                "classfiles": classfiles,
+                "csv_file": csv_file,
+                "tool": self.tool
+            }
+        )
+        print(command)
+        return command
+
     def run(self, times):
-        # falta mutaciones
+
+        def executeCommands(commands):
+            processes = [Process(target=subprocess.run, args=(c,))
+                         for c in commands]
+            for p in processes:
+                p.start()
+            for p in processes:
+                p.join()
+
         results = {
         }
+        self.genFolders(self.getSrcPath())
+        self.genFolders(self.getBinPath())
+        self.genFolders(self.getReportPath())
+
+        generate_tests_commands = map(self.genCommand, self.testclasses)
+        compile_commands = map(self.compileTestCommand, self.testclasses)
+        run_commands = map(self.runTestCommands, self.testclasses)
+        gen_reports_commands = map(self.genReportCommand, self.testclasses)
+
         for _ in range(times):
-            self.runCommands(self.genTestsCommands())
-            self.runCommands(self.compileTestsCommands())
-            self.runCommands(self.runTestsCommands())
-            self.runCommands(self.genReportCommand())
+            # falta mutaciones
+            executeCommands(generate_tests_commands)
+            executeCommands(compile_commands)
+            executeCommands(run_commands)
+            executeCommands(gen_reports_commands)
 
             for t in self.testclasses:
                 csv_filename = os.path.join(self.getReportPath(), t) + ".csv"
@@ -125,54 +163,8 @@ class TestGenerator(object):
 
         return results
 
-    def runTestsCommands(self):
-        commands = []
-        for t in self.testclasses:
-            bin_ = self.getBinPath()
-            self.genFolders(self.getReportPath())
-            jars = os.path.join("jars", "*")
-            classpath = os.pathsep.join([".", "bin", bin_, jars])
-            jacoco = "{jar}=destfile={report_out}.exec".format(
-                **{
-                    "jar": os.path.join("jars", "jacocoagent.jar"),
-                    "report_out": os.path.join(self.getReportPath(), t),
-                }
-            )
-            command = "java -cp {classpath} -javaagent:{jacoco} org.junit.runner.JUnitCore {classname}".format(
-                **{
-                    "classpath": classpath,
-                    "jacoco": jacoco,
-                    "classname": t + self.suffix
-                }
-            )
-            print(command)
-            commands.append(command)
-        return commands
-
-    def compileTestsCommands(self):
-        commands = []
-        for t in self.testclasses:
-            src = self.getSrcPath(t)
-            bin_ = self.getBinPath()
-            self.genFolders(bin_)
-            classpath = os.pathsep.join(
-                [".", os.path.join("jars", "*"), bin_, "bin"]
-            )
-            to_compile = os.path.join(src, "*.java")
-            command = "javac -cp {classpath} {to_compile} -d {bin}".format(
-                **{
-                    "classpath": classpath,
-                    "to_compile": to_compile,
-                    "bin": bin_
-                }
-            )
-            print(command)
-            commands.append(command)
-        return commands
-
-    def getSrcPath(self, testclass):
-        package = self.getPackage(testclass)
-        return os.path.join("tests", self.tool, "src", *package)
+    def getSrcPath(self):
+        return os.path.join("tests", self.tool, "src", self.folder_suffix)
 
     def getBinPath(self):
         return os.path.join("tests", self.tool, "bin")
@@ -232,6 +224,7 @@ class EvoTestGenerator(TestGenerator):
         super(EvoTestGenerator, self).__init__(testclasses)
         self.tool = "evo"
         self.suffix = "_ESTest"
+        self.folder_suffix = "evosuite-tests"
 
     def genCommand(self, testclass):
         jars = os.path.join("jars", "evosuite-master-1.0.5.jar")
@@ -254,11 +247,6 @@ class EvoTestGenerator(TestGenerator):
         )
         print(command)
         return command
-
-    def getSrcPath(self, testclass):
-        suffix = "evosuite-tests"
-        package = self.getPackage(testclass)
-        return os.path.join("tests", self.tool, "src", suffix, *package)
 
 
 # lo deberia levantar de un txt?
