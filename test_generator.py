@@ -35,29 +35,6 @@ class TestGenerator(object):
             exec_command = "cmd /c mkdir "
         subprocess.run(exec_command + path)
 
-    def compileCommands(self, src, bin_):
-        classpath = os.pathsep.join(
-            [".", os.path.join("jars", "*"), bin_, "bin"]
-        )
-        to_compile = os.path.join(src, "*.java")
-        command = "javac -cp {classpath} {to_compile} -d {bin}".format(
-            **{
-                "classpath": classpath,
-                "to_compile": to_compile,
-                "bin": bin_
-            }
-        )
-        print(command)
-        return command
-
-    def genCommand(self, t):
-        raise NotImplementedError
-
-    def runMutationTestCommandGenerator(self, src, bin_, report, testclass):
-        jars = os.path.join("jars", "*")
-        classpath = os.pathsep.join([".", "bin", bin_, jars])
-        pitest = ""
-
     def updateResultsCsv(self, csv_filename, results):
         with open(csv_filename, "r") as coverage_results:
             for row in csv.DictReader(coverage_results):
@@ -68,6 +45,9 @@ class TestGenerator(object):
                     results[class_name].setdefault(h, 0)
                     results[class_name][h] += int(row[h])
         return results
+
+    def genTestCommand(self, t):
+        raise NotImplementedError
 
     def compileTestCommand(self, testclass):
         src = os.path.join(self.getSrcPath(), *self.getPackage(testclass))
@@ -83,6 +63,36 @@ class TestGenerator(object):
                 "bin": bin_
             }
         )
+        print(command)
+        return command
+
+    def mutationTestCommand(self, testclass):
+        classpath_folders = ["bin", self.getBinPath(), os.path.join("jars", "*")]
+        classpath = os.pathsep.join(classpath_folders)
+        pit_classpath = ",".join(classpath_folders)
+        src_dirs =  ["src", self.getSrcPath()]
+        pitest = "org.pitest.mutationtest.commandline.MutationCoverageReport"
+        star_classes = ".".join([*self.getPackage(testclass), "*"])
+        options = " ".join([
+            "--reportDir {0}".format(self.getReportPath()),
+            "--targetClasses {0}".format(testclass),
+            "--targetTests {0}".format(testclass + self.suffix),
+            "--sourceDirs {dirs}".format(
+                **{
+                    "dirs": ",".join(src_dirs)
+                }
+            ),
+            "--outputFormats CSV",
+            "--timestampedReports=false"
+        ])
+        command = "java -cp {classpath}  {pitest} {options}".format(
+            **{
+                "classpath": classpath,
+                "pitest": pitest,
+                "options": options,
+            }
+        )
+
         print(command)
         return command
 
@@ -140,16 +150,18 @@ class TestGenerator(object):
         self.genFolders(self.getSrcPath())
         self.genFolders(self.getBinPath())
         self.genFolders(self.getReportPath())
+        self.genFolders(self.getMutationsReportPath())
 
-        generate_tests_commands = map(self.genCommand, self.testclasses)
+        generate_tests_commands = map(self.genTestCommand, self.testclasses)
         compile_commands = map(self.compileTestCommand, self.testclasses)
         run_commands = map(self.runTestCommands, self.testclasses)
         gen_reports_commands = map(self.genReportCommand, self.testclasses)
+        mutation_commands = map(self.mutationTestCommand, self.testclasses)
 
         for _ in range(times):
-            # falta mutaciones
             executeCommands(generate_tests_commands)
             executeCommands(compile_commands)
+            executeCommands(mutation_commands)
             executeCommands(run_commands)
             executeCommands(gen_reports_commands)
 
@@ -178,6 +190,9 @@ class TestGenerator(object):
     def getReportPath(self):
         return os.path.join("reports", self.tool)
 
+    def getMutationsReportPath(self):
+        return os.path.join(self.getReportPath(), "mutationReport")
+
 
 class RandoopTestGenerator(TestGenerator):
 
@@ -186,7 +201,7 @@ class RandoopTestGenerator(TestGenerator):
         self.tool = "randoop"
         self.suffix = "_Test"
 
-    def genCommand(self, testclass):
+    def genTestCommand(self, testclass):
         classpath = os.pathsep.join(
             [os.path.join("jars", "*"), "bin"]
         )
@@ -226,14 +241,15 @@ class EvoTestGenerator(TestGenerator):
         self.suffix = "_ESTest"
         self.folder_suffix = "evosuite-tests"
 
-    def genCommand(self, testclass):
+    def genTestCommand(self, testclass):
         jars = os.path.join("jars", "evosuite-master-1.0.5.jar")
         classpath = os.path.abspath("bin")
         options = " ".join([
             "-generateSuite",
             "-Dsearch_budget=60",
             "-Dstopping_condition=MaxTime",
-            "-Duse_separate_classloader=false"
+            "-Duse_separate_classloader=false",
+            "-Dsave_all_data=false"
         ])
         command = "java -ea -jar {jars} -projectCP {classpath} {options} -class {testclass} -base_dir {output_dir}".format(
             **{
@@ -261,5 +277,5 @@ if __name__ == '__main__':
     r = RandoopTestGenerator(testclasses)
     pprint(r.run(1))
 
-    evo = EvoTestGenerator(testclasses)
-    pprint(evo.run(1))
+    # evo = EvoTestGenerator(testclasses)
+    # pprint(evo.run(1))
