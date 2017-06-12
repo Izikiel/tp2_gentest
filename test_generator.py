@@ -266,7 +266,7 @@ class TestGenerator(object):
         return results
 
     def writeOutputToCsv(self, results_run):
-        with open('results.csv', 'a') as csvfile:
+        with open('results.csv', 'a', newline='') as csvfile:
             header = ["class", "tool", "line_coverage_%",
                       "branch_coverage_%", "mutation_score_%"]
             writer = csv.DictWriter(csvfile, fieldnames=header)
@@ -395,11 +395,14 @@ testclasses = [
 ]
 
 
-def print_results(results):
-    print("\t\tAverage Line Coverage\t\tAverage Branch Coverage\t\tAverage Mutation Score")
-    print("Class\t\tRandoop Evosuite\t\tRandoop Evosuite\t\tRandoop Evosuite\t\t")
+def print_results_markdown(results):
+    print("_____________________________________________________|Avg Line Coverage|Avg Branch Coverage|Avg Mutation Score")
+    print("-------|-------|-------|-------")
+    print()
+    print("Class|Randoop|Evosuite|Randoop|Evosuite|Randoop|Evosuite")
+    print("-------|-------|-------|-------|-------|-------|-------")
     for t in testclasses:
-        print("{classname}\t\t{r_line} {e_line}\t\t{r_branch} {e_branch}\t\t{r_mutation} {e_mutation}\t\t".format(
+        print("{classname}|{r_line:.3f}|{e_line:.3f}|{r_branch:.3f}|{e_branch:.3f}|{r_mutation:.3f}|{e_mutation:.3f}".format(
             **{
                 "classname": t,
                 "r_line": results['Randoop'][t]["LINE_COVERAGE"],
@@ -436,4 +439,4 @@ if __name__ == '__main__':
     for g in generators:
         results[g.tool] = g.run(test_suites)
 
-    print_results(results)
+    print_results_markdown(results)
