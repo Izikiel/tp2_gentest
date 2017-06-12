@@ -182,25 +182,28 @@ class TestGenerator(object):
     def executeCommands(self, commands):
         processes = [Process(target=subprocess.run, args=(c,))
                      for c in commands]
-        if len(processes) < 5:
+        processors = os.cpu_count()
+        if processors is None:
+            processors = 4
+        if len(processes) <= processors:
             for p in processes:
                 p.start()
             for p in processes:
                 p.join()
         else:
-            pieces = len(processes) // 4
+            pieces = len(processes) // processors
             for x in range(pieces):
-                for i in range(4):
-                    processes[x * 4 + i].start()
-                for i in range(4):
-                    processes[x * 4 + i].join()
+                for i in range(processors):
+                    processes[x * processors + i].start()
+                for i in range(processors):
+                    processes[x * processors + i].join()
 
-            remaining = len(processes) % 4
+            remaining = len(processes) % processors
             if remaining > 0:
                 for i in range(remaining):
-                    processes[pieces * 4 + i].start()
+                    processes[pieces * processors + i].start()
                 for i in range(remaining):
-                    processes[pieces * 4 + i].join()
+                    processes[pieces * processors + i].join()
 
     def generateReportsFolders(self, testSuites):
         self.genFolders(self.getBinPath())
