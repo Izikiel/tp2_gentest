@@ -59,7 +59,9 @@ class TestGenerator(object):
 
     def getResultsCsvCoverage(self, t, n):
         results = {}
-        csv_filename = os.path.join(self.getReportPath(), t) + n + ".csv"
+        testSuiteName = self.generateTestSuiteName(t, n)
+        csv_filename = os.path.join(
+            self.getReportPath(), testSuiteName) + ".csv"
         with open(csv_filename, "r") as coverage_results:
             for row in csv.DictReader(coverage_results):
                 for h in TestGenerator.HEADERS_JACOCO_COVERAGE:
@@ -133,26 +135,28 @@ class TestGenerator(object):
 
     def runTestCommands(self, testclass, testSuite=""):
         jars = os.path.join("jars", "*")
+        testSuiteName = self.generateTestSuiteName(testclass, testSuite)
         classpath = os.pathsep.join([".", "bin", self.getBinPath(), jars])
         jacoco = "{jar}=destfile={report_out}.exec".format(
             **{
                 "jar": os.path.join("jars", "jacocoagent.jar"),
-                "report_out": os.path.join(self.getReportPath(), testclass + testSuite),
+                "report_out": os.path.join(self.getReportPath(), testSuiteName),
             }
         )
         command = "java -cp {classpath} -javaagent:{jacoco} org.junit.runner.JUnitCore {classname}".format(
             **{
                 "classpath": classpath,
                 "jacoco": jacoco,
-                "classname": testclass + testSuite + self.suffix
+                "classname": testSuiteName
             }
         )
         print(command)
         return command
 
     def genReportCommand(self, testclass, testSuite=""):
+        testSuiteName = self.generateTestSuiteName(testclass, testSuite)
         report_file_name = os.path.join(
-            self.getReportPath(), testclass + testSuite
+            self.getReportPath(), testSuiteName
         )
         exec_file = report_file_name + ".exec"
         csv_file = report_file_name + ".csv"
@@ -175,10 +179,25 @@ class TestGenerator(object):
     def executeCommands(self, commands):
         processes = [Process(target=subprocess.run, args=(c,))
                      for c in commands]
-        for p in processes:
-            p.start()
-        for p in processes:
-            p.join()
+        if len(processes) < 5:
+            for p in processes:
+                p.start()
+            for p in processes:
+                p.join()
+        else:
+            pieces = len(processes) // 4
+            for x in range(pieces):
+                for i in range(4):
+                    processes[x * 4 + i].start()
+                for i in range(4):
+                    processes[x * 4 + i].join()
+
+            remaining = len(processes) % 4
+            if remaining > 0:
+                for i in range(remaining):
+                    processes[pieces * 4 + i].start()
+                for i in range(remaining):
+                    processes[pieces * 4 + i].join()
 
     def generateTestsReportsFolders(self):
         self.genFolders(self.getSrcPath())
@@ -198,10 +217,10 @@ class TestGenerator(object):
 
         compile_commands = [self.compileTestCommand(t)
                             for t in self.testclasses]
-        run_commands = [self.runTestCommands(t, str(n))
+        run_commands = [self.runTestCommands(t, n)
                         for t in self.testclasses
                         for n in range(testSuites)]
-        gen_reports_commands = [self.genReportCommand(t, str(n))
+        gen_reports_commands = [self.genReportCommand(t, n)
                                 for t in self.testclasses
                                 for n in range(testSuites)]
         mutation_commands = [self.mutationTestCommand(t)
@@ -216,11 +235,14 @@ class TestGenerator(object):
         for t in self.testclasses:
             for n in range(testSuites):
                 coverage = self.getResultsCsvCoverage(t, str(n))
-                results[t]["LINE_COVERAGE"] += self.getLineCoveragePercentage(coverage)
-                results[t]["BRANCH_COVERAGE"] += self.getBranchCoveragePercentage(coverage)
+                results[t][
+                    "LINE_COVERAGE"] += self.getLineCoveragePercentage(coverage)
+                results[t][
+                    "BRANCH_COVERAGE"] += self.getBranchCoveragePercentage(coverage)
 
             mutations = self.getResultsMutations(t)
-            results[t]["MUTATION_SCORE"] += self.getMutationScorePercentage(mutations)
+            results[t][
+                "MUTATION_SCORE"] += self.getMutationScorePercentage(mutations)
 
         for t in self.testclasses:
             results[t]["LINE_COVERAGE"] /= float(testSuites)
@@ -260,6 +282,9 @@ class TestGenerator(object):
     def getMutationsReportPath(self, testclass):
         return os.path.join(self.getReportPath(), "mutationReport", testclass)
 
+    def generateTestSuiteName(self, testclass, testSuiteNumber):
+        return "".join([testclass, str(testSuiteNumber), self.suffix])
+
 
 class RandoopTestGenerator(TestGenerator):
 
@@ -279,7 +304,7 @@ class RandoopTestGenerator(TestGenerator):
             "--timelimit=60",
             "--regression-test-basename={testclass}".format(
                 **{
-                    "testclass": self.getClassName(testclass) + str(testSuiteNumber) + self.suffix
+                    "testclass": self.generateTestSuiteName(self.getClassName(testclass), testSuiteNumber)
                 }
             ),
             "--junit-package-name={package}".format(
@@ -338,17 +363,22 @@ class EvoTestGenerator(TestGenerator):
 # lo deberia levantar de un txt?
 testclasses = [
     "collections.comparators.FixedOrderComparator",
-    # "collections.iterators.FilterIterator",
-    # "collections.map.PredicatedMap",
-    # "math.genetics.ElitisticListPopulation",
+    "collections.iterators.FilterIterator",
+    "collections.map.PredicatedMap",
+    "math.genetics.ElitisticListPopulation",
 ]
 
 if __name__ == '__main__':
-    # r = RandoopTestGenerator(testclasses)
-    # results = r.run(1)
+    test_suites = 30
+    generate = True
+    generators = [RandoopTestGenerator(testclasses),
+                  EvoTestGenerator(testclasses)]
 
-    # pprint(results)
+    #generate tests
+    if generate:
+        for g in generators:
+            g.generateTestSuites(test_suites)
 
-    evo = EvoTestGenerator(testclasses)
-    evo.generateTestSuites(5)
-    pprint(evo.run(5))
+    for g in generators:
+        pprint(g.run(test_suites))
+
