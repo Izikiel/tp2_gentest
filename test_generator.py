@@ -395,7 +395,7 @@ testclasses = [
 def print_results(results):
     print("\t\tAverage Line Coverage\t\tAverage Branch Coverage\t\tAverage Mutation Score")
     print("Class\t\tRandoop Evosuite\t\tRandoop Evosuite\t\tRandoop Evosuite\t\t")
-    for t in self.testclasses:
+    for t in testclasses:
         print("{classname}\t\t{r_line} {e_line}\t\t{r_branch} {e_branch}\t\t{r_mutation} {e_mutation}\t\t".format(
             **{
                 "classname": t,
@@ -433,4 +433,4 @@ if __name__ == '__main__':
     for g in generators:
         results[g.tool] = g.run(test_suites)
 
-    pprint(results)
+    print_results(results)
