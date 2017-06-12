@@ -69,12 +69,12 @@ class TestGenerator(object):
                     results[h] = int(row[h])
         return results
 
-    def getResultsMutations(self, t):
+    def getResultsMutations(self, t, n):
         resultsMutation = {
             status: 0 for status in TestGenerator.STATUS_MUTATIONS
         }
         csv_filename = os.path.join(
-            self.getMutationsReportPath(t), "mutations.csv")
+            self.getMutationsReportPath(t, n), "mutations.csv")
         with open(csv_filename, "r") as mutation_results:
             reader = csv.reader(mutation_results)
             for row in reader:
@@ -103,18 +103,18 @@ class TestGenerator(object):
         print(command)
         return command
 
-    def mutationTestCommand(self, testclass):
+    def mutationTestCommand(self, testclass, testSuite):
         classpath_folders = [
             "bin", self.getBinPath(), os.path.join("jars", "*")]
         classpath = os.pathsep.join(classpath_folders)
         pit_classpath = ",".join(classpath_folders)
         src_dirs = ["src", self.getSrcPath()]
         pitest = "org.pitest.mutationtest.commandline.MutationCoverageReport"
-        star_classes = ".".join([*self.getPackage(testclass), "*"])
         options = " ".join([
-            "--reportDir {0}".format(self.getMutationsReportPath(testclass)),
+            "--reportDir {0}".format(
+                self.getMutationsReportPath(testclass, testSuite)),
             "--targetClasses {0}".format(testclass),
-            "--targetTests {0}".format(star_classes),
+            "--targetTests {0}".format(self.generateTestSuiteName(testclass, testSuite)),
             "--sourceDirs {dirs}".format(
                 **{
                     "dirs": ",".join(src_dirs)
@@ -199,12 +199,12 @@ class TestGenerator(object):
                 for i in range(remaining):
                     processes[pieces * 4 + i].join()
 
-    def generateTestsReportsFolders(self):
-        self.genFolders(self.getSrcPath())
+    def generateReportsFolders(self, testSuites):
         self.genFolders(self.getBinPath())
         self.genFolders(self.getReportPath())
         for t in self.testclasses:
-            self.genFolders(self.getMutationsReportPath(t))
+            for n in range(testSuites):
+                self.genFolders(self.getMutationsReportPath(t, str(n)))
 
     def generateTestSuites(self, numberOfTestSuites):
         generate_tests_commands = [self.genTestCommand(t, n) for t in self.testclasses
@@ -212,7 +212,7 @@ class TestGenerator(object):
         self.executeCommands(generate_tests_commands)
 
     def run(self, testSuites):
-
+        self.generateReportsFolders(testSuites)
         results = {t: defaultdict(float) for t in self.testclasses}
 
         compile_commands = [self.compileTestCommand(t)
@@ -223,10 +223,10 @@ class TestGenerator(object):
         gen_reports_commands = [self.genReportCommand(t, n)
                                 for t in self.testclasses
                                 for n in range(testSuites)]
-        mutation_commands = [self.mutationTestCommand(t)
-                             for t in self.testclasses]
+        mutation_commands = [self.mutationTestCommand(t, str(n))
+                             for t in self.testclasses
+                             for n in range(testSuites)]
 
-        # for _ in range(times):
         self.executeCommands(compile_commands)
         self.executeCommands(mutation_commands)
         self.executeCommands(run_commands)
@@ -235,19 +235,36 @@ class TestGenerator(object):
         for t in self.testclasses:
             for n in range(testSuites):
                 coverage = self.getResultsCsvCoverage(t, str(n))
-                results[t][
-                    "LINE_COVERAGE"] += self.getLineCoveragePercentage(coverage)
-                results[t][
-                    "BRANCH_COVERAGE"] += self.getBranchCoveragePercentage(coverage)
+                mutations = self.getResultsMutations(t, str(n))
 
-            mutations = self.getResultsMutations(t)
-            results[t][
-                "MUTATION_SCORE"] += self.getMutationScorePercentage(mutations)
+                line_coverage = self.getLineCoveragePercentage(coverage)
+                branch_coverage = self.getBranchCoveragePercentage(coverage)
+                mutation_score = self.getMutationScorePercentage(mutations)
+
+                self.writeOutputToCsv({
+                    "class": t,
+                    "tool": self.tool,
+                    "line_coverage_%": line_coverage,
+                    "branch_coverage_%": branch_coverage,
+                    "mutation_score_%": mutation_score
+                })
+
+                results[t]["LINE_COVERAGE"] += line_coverage
+                results[t]["BRANCH_COVERAGE"] += branch_coverage
+                results[t]["MUTATION_SCORE"] += mutation_score
 
         for t in self.testclasses:
             results[t]["LINE_COVERAGE"] /= float(testSuites)
             results[t]["BRANCH_COVERAGE"] /= float(testSuites)
+            results[t]["MUTATION_SCORE"] /= float(testSuites)
         return results
+
+    def writeOutputToCsv(self, results_run):
+        with open('results.csv', 'a') as csvfile:
+            header = ["class", "tool", "line_coverage_%",
+                      "branch_coverage_%", "mutation_score_%", ]
+            writer = csv.DictWriter(csvfile, fieldnames=header)
+            writer.writerow(results_run)
 
     def getLineCoveragePercentage(self, results):
         covered_lines = results['LINE_COVERED']
@@ -279,8 +296,8 @@ class TestGenerator(object):
     def getReportPath(self):
         return os.path.join("reports", self.tool)
 
-    def getMutationsReportPath(self, testclass):
-        return os.path.join(self.getReportPath(), "mutationReport", testclass)
+    def getMutationsReportPath(self, testclass, testSuite):
+        return os.path.join(self.getReportPath(), "mutationReport", testclass, testSuite)
 
     def generateTestSuiteName(self, testclass, testSuiteNumber):
         return "".join([testclass, str(testSuiteNumber), self.suffix])
@@ -292,7 +309,7 @@ class RandoopTestGenerator(TestGenerator):
         super(RandoopTestGenerator, self).__init__(testclasses)
         self.tool = "Randoop"
         self.suffix = "_Test"
-        self.generateTestsReportsFolders()
+        self.genFolders(self.getSrcPath())
 
     def genTestCommand(self, testclass, testSuiteNumber):
         classpath = os.pathsep.join(
@@ -333,7 +350,7 @@ class EvoTestGenerator(TestGenerator):
         self.tool = "EvoSuite"
         self.suffix = "_ESTest"
         self.folder_suffix = "evosuite-tests"
-        self.generateTestsReportsFolders()
+        self.genFolders(self.getSrcPath())
 
     def genTestCommand(self, testclass, testSuiteNumber):
         jars = os.path.join("jars", "evosuite-master-1.0.5.jar")
@@ -369,16 +386,27 @@ testclasses = [
 ]
 
 if __name__ == '__main__':
+
+    exec_command = ""
+    if sys.platform != 'win32':
+        exec_command += "rm "
+    else:
+        exec_command = "cmd /c del"
+    subprocess.run(exec_command + "results.csv")
+
     test_suites = 30
-    generate = True
+    generate = False
     generators = [RandoopTestGenerator(testclasses),
                   EvoTestGenerator(testclasses)]
 
-    #generate tests
+    # generate tests
     if generate:
         for g in generators:
             g.generateTestSuites(test_suites)
 
-    for g in generators:
-        pprint(g.run(test_suites))
+    results = {}
 
+    for g in generators:
+        results[g.tool] = g.run(test_suites)
+
+    pprint(results)
