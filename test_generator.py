@@ -390,7 +390,6 @@ class EvoTestGenerator(TestGenerator):
         return command
 
 
-# lo deberia levantar de un txt?
 testclasses = [
     "collections.comparators.FixedOrderComparator",
     "collections.iterators.FilterIterator",
