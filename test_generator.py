@@ -5,6 +5,8 @@ from multiprocessing import Process
 import csv
 from collections import defaultdict
 from pprint import pprint
+import random
+import time
 
 
 class TestGenerator(object):
@@ -114,7 +116,8 @@ class TestGenerator(object):
             "--reportDir {0}".format(
                 self.getMutationsReportPath(testclass, testSuite)),
             "--targetClasses {0}".format(testclass),
-            "--targetTests {0}".format(self.generateTestSuiteName(testclass, testSuite)),
+            "--targetTests {0}".format(
+                self.generateTestSuiteName(testclass, testSuite)),
             "--sourceDirs {dirs}".format(
                 **{
                     "dirs": ",".join(src_dirs)
@@ -262,7 +265,7 @@ class TestGenerator(object):
     def writeOutputToCsv(self, results_run):
         with open('results.csv', 'a') as csvfile:
             header = ["class", "tool", "line_coverage_%",
-                      "branch_coverage_%", "mutation_score_%", ]
+                      "branch_coverage_%", "mutation_score_%"]
             writer = csv.DictWriter(csvfile, fieldnames=header)
             writer.writerow(results_run)
 
@@ -315,6 +318,7 @@ class RandoopTestGenerator(TestGenerator):
         classpath = os.pathsep.join(
             [os.path.join("jars", "*"), "bin"]
         )
+        random.seed(int(time.time() * 10))
         randoop = "randoop.main.Main gentests"
         options = " ".join([
             "--no-error-revealing-tests=true",
@@ -328,7 +332,9 @@ class RandoopTestGenerator(TestGenerator):
                 **{
                     "package": ".".join(self.getPackage(testclass))
                 }
-            )
+            ),
+            "--classlist=classlist_randoop.txt",
+            "--randomseed={0}".format(int(random.random() * 1000))
         ])
         command = "java -ea -classpath {classpath} {randoop} --testclass={testclass} {options} --junit-output-dir={output_dir}".format(
             **{
@@ -385,6 +391,24 @@ testclasses = [
     "math.genetics.ElitisticListPopulation",
 ]
 
+
+def print_results(results):
+    print("\t\tAverage Line Coverage\t\tAverage Branch Coverage\t\tAverage Mutation Score")
+    print("Class\t\tRandoop Evosuite\t\tRandoop Evosuite\t\tRandoop Evosuite\t\t")
+    for t in self.testclasses:
+        print("{classname}\t\t{r_line} {e_line}\t\t{r_branch} {e_branch}\t\t{r_mutation} {e_mutation}\t\t".format(
+            **{
+                "classname": t,
+                "r_line": results['Randoop'][t]["LINE_COVERAGE"],
+                "e_line": results['EvoSuite'][t]["LINE_COVERAGE"],
+                "r_branch": results["Randoop"][t]["BRANCH_COVERAGE"],
+                "e_branch": results["EvoSuite"][t]["BRANCH_COVERAGE"],
+                "r_mutation": results["Randoop"][t]["MUTATION_SCORE"],
+                "e_mutation": results["EvoSuite"][t]["MUTATION_SCORE"]
+            }
+        ))
+
+
 if __name__ == '__main__':
 
     exec_command = ""
@@ -392,7 +416,7 @@ if __name__ == '__main__':
         exec_command += "rm "
     else:
         exec_command = "cmd /c del"
-    subprocess.run(exec_command + "results.csv")
+    subprocess.run(exec_command + " results.csv")
 
     test_suites = 30
     generate = False
