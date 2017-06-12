@@ -216,7 +216,6 @@ class TestGenerator(object):
 
     def run(self, testSuites):
         self.generateReportsFolders(testSuites)
-        results = {t: defaultdict(float) for t in self.testclasses}
 
         compile_commands = [self.compileTestCommand(t)
                             for t in self.testclasses]
@@ -235,6 +234,10 @@ class TestGenerator(object):
         self.executeCommands(run_commands)
         self.executeCommands(gen_reports_commands)
 
+        return self.generateResults(testSuites)
+
+    def generateResults(self, testSuites):
+        results = {t: defaultdict(float) for t in self.testclasses}
         for t in self.testclasses:
             for n in range(testSuites):
                 coverage = self.getResultsCsvCoverage(t, str(n))
