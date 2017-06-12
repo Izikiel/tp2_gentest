@@ -11,11 +11,12 @@ import time
 
 class TestGenerator(object):
 
-    def __init__(self, testclasses):
+    def __init__(self, testclasses, test_suites):
         self.tool = ""
         self.testclasses = testclasses
         self.suffix = ""
         self.folder_suffix = ""
+        self.test_suites = test_suites
 
     HEADERS_JACOCO_COVERAGE = [
         "INSTRUCTION_MISSED",
@@ -205,44 +206,44 @@ class TestGenerator(object):
                 for i in range(remaining):
                     processes[pieces * processors + i].join()
 
-    def generateReportsFolders(self, testSuites):
+    def generateReportsFolders(self):
         self.genFolders(self.getBinPath())
         self.genFolders(self.getReportPath())
         for t in self.testclasses:
-            for n in range(testSuites):
+            for n in range(self.test_suites):
                 self.genFolders(self.getMutationsReportPath(t, str(n)))
 
-    def generateTestSuites(self, numberOfTestSuites):
+    def generateTestSuites(self):
         generate_tests_commands = [self.genTestCommand(t, n) for t in self.testclasses
-                                   for n in range(numberOfTestSuites)]
+                                   for n in range(self.test_suites)]
         self.executeCommands(generate_tests_commands)
 
-    def run(self, testSuites):
-        self.generateReportsFolders(testSuites)
+    def run(self):
+        self.generateReportsFolders()
 
         compile_commands = [self.compileTestCommand(t)
                             for t in self.testclasses]
         run_commands = [self.runTestCommands(t, n)
                         for t in self.testclasses
-                        for n in range(testSuites)]
+                        for n in range(self.test_suites)]
         gen_reports_commands = [self.genReportCommand(t, n)
                                 for t in self.testclasses
-                                for n in range(testSuites)]
+                                for n in range(self.test_suites)]
         mutation_commands = [self.mutationTestCommand(t, str(n))
                              for t in self.testclasses
-                             for n in range(testSuites)]
+                             for n in range(self.test_suites)]
 
         self.executeCommands(compile_commands)
         self.executeCommands(mutation_commands)
         self.executeCommands(run_commands)
         self.executeCommands(gen_reports_commands)
 
-        return self.generateResults(testSuites)
+        return self.generateResults()
 
-    def generateResults(self, testSuites):
+    def generateResults(self):
         results = {t: defaultdict(float) for t in self.testclasses}
         for t in self.testclasses:
-            for n in range(testSuites):
+            for n in range(self.test_suites):
                 coverage = self.getResultsCsvCoverage(t, str(n))
                 mutations = self.getResultsMutations(t, str(n))
 
@@ -263,9 +264,9 @@ class TestGenerator(object):
                 results[t]["MUTATION_SCORE"] += mutation_score
 
         for t in self.testclasses:
-            results[t]["LINE_COVERAGE"] /= float(testSuites)
-            results[t]["BRANCH_COVERAGE"] /= float(testSuites)
-            results[t]["MUTATION_SCORE"] /= float(testSuites)
+            results[t]["LINE_COVERAGE"] /= float(self.test_suites)
+            results[t]["BRANCH_COVERAGE"] /= float(self.test_suites)
+            results[t]["MUTATION_SCORE"] /= float(self.test_suites)
         return results
 
     def writeOutputToCsv(self, results_run):
@@ -314,8 +315,8 @@ class TestGenerator(object):
 
 class RandoopTestGenerator(TestGenerator):
 
-    def __init__(self, testclasses):
-        super(RandoopTestGenerator, self).__init__(testclasses)
+    def __init__(self, testclasses, test_suites):
+        super(RandoopTestGenerator, self).__init__(testclasses, test_suites)
         self.tool = "Randoop"
         self.suffix = "_Test"
         self.genFolders(self.getSrcPath())
@@ -357,8 +358,8 @@ class RandoopTestGenerator(TestGenerator):
 
 class EvoTestGenerator(TestGenerator):
 
-    def __init__(self, testclasses):
-        super(EvoTestGenerator, self).__init__(testclasses)
+    def __init__(self, testclasses, test_suites):
+        super(EvoTestGenerator, self).__init__(testclasses, test_suites)
         self.tool = "EvoSuite"
         self.suffix = "_ESTest"
         self.folder_suffix = "evosuite-tests"
@@ -429,17 +430,17 @@ if __name__ == '__main__':
 
     test_suites = 30
     generate = False
-    generators = [RandoopTestGenerator(testclasses),
-                  EvoTestGenerator(testclasses)]
+    generators = [RandoopTestGenerator(testclasses, test_suites),
+                  EvoTestGenerator(testclasses, test_suites)]
 
     # generate tests
     if generate:
         for g in generators:
-            g.generateTestSuites(test_suites)
+            g.generateTestSuites()
 
     results = {}
 
     for g in generators:
-        results[g.tool] = g.run(test_suites)
+        results[g.tool] = g.run()
 
     print_results_markdown(results)
